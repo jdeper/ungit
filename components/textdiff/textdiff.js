@@ -1,88 +1,127 @@
 
 var ko = require('knockout');
 var components = require('ungit-components');
+var _ = require('lodash');
+var diff2html = require('diff2html').Diff2Html;
+var hljs = require('highlight.js');
 
 components.register('textdiff', function(args) {
   return new TextDiffViewModel(args);
 });
+
+var loadLimit = 100;
 
 var TextDiffViewModel = function(args) {
   var self = this;
   this.filename = args.filename;
   this.repoPath = args.repoPath;
   this.server = args.server;
-  this.diffs = ko.observable();
   this.sha1 = args.sha1;
-  this.oldMode = ko.observable();
-  this.newMode = ko.observable();
-  this.totalNumberOfLines = ko.observable(0);
-  this.isLoadingAllLines = ko.observable(false);
-  this.showLoadAllButton = ko.computed(function() {
-    return !self.isLoadingAllLines() && self.diffs() && self.totalNumberOfLines() != self.diffs().length;
+  this.loadMoreCount = ko.observable(0);
+  this.diffJson = null;
+  this.diffHtml = ko.observable();
+  this.loadCount = loadLimit;
+  this.textDiffType = args.textDiffType;
+  this.isShowingDiffs = args.isShowingDiffs;
+  this.diffProgressBar = args.diffProgressBar;
+
+  this.textDiffType.subscribe(function() {
+    self.invalidateDiff();
   });
-  this.initialDisplayLineLimit = args.initialDisplayLineLimit ? args.initialDisplayLineLimit : 100;
 }
 TextDiffViewModel.prototype.updateNode = function(parentElement) {
   ko.renderTemplate('textdiff', this, {}, parentElement);
 }
-TextDiffViewModel.prototype.loadAllLines = function(data, event) {
-  event.stopImmediatePropagation();
-  this.isLoadingAllLines(true);
-  this.invalidateDiff();
-}
 TextDiffViewModel.prototype.getDiffArguments = function() {
-  var args = {};
-  args.file = this.filename;
-  args.path = this.repoPath;
-  args.sha1 = this.sha1 ? this.sha1 : '';
-  args.maxNLines = this.isLoadingAllLines() ? 0 : this.initialDisplayLineLimit;
-
-  return args;
+  return {
+    file: this.filename,
+    path: this.repoPath,
+    sha1: this.sha1 ? this.sha1 : ''
+  };
 }
+
 TextDiffViewModel.prototype.invalidateDiff = function(callback) {
   var self = this;
 
-  self.server.get('/diff', this.getDiffArguments() , function(err, diffs) {
-    if (err) {
-      if (err.errorCode == 'no-such-file') {
-        // The file existed before but has been removed, but we're trying to get a diff for it
-        // Most likely it will just disappear with the next refresh of the staging area
-        // so we just ignore the error here
-        return true;
-      }
-      return callback ? callback(err) : null;
-    }
-    var newDiffs = [];
-    diffs.forEach(function(diff) {
-      diff.lines.forEach(
-        function(line) {
-          newDiffs.push({
-            oldLineNumber: line[0],
-            newLineNumber: line[1],
-            added: line[2][0] == '+',
-            removed: line[2][0] == '-' || line[2][0] == '\\',
-            text: line[2]
-          });
+  if (this.isShowingDiffs()) {
+    if (this.diffProgressBar) this.diffProgressBar.start();
+
+    self.server.get('/diff', this.getDiffArguments() , function(err, diffs) {
+      if (err) {
+        if (self.diffProgressBar) self.diffProgressBar.stop();
+        if (err.errorCode == 'no-such-file') {
+          // The file existed before but has been removed, but we're trying to get a diff for it
+          // Most likely it will just disappear with the next refresh of the staging area
+          // so we just ignore the error here
+          return true;
         }
-      );
-      if (diff.aMode && diff.bMode) {
-        self.oldMode(diff.aMode[1]);
-        self.newMode(diff.bMode[1]);
-
-        newDiffs.push({
-          oldLineNumber: '-',
-          newLineNumber: '-',
-          added: false,
-          removed: false,
-          text: 'Mode changed from ' + self.oldMode() + ' to ' + self.newMode()
-        });
+        return callback ? callback(err) : null;
       }
+
+      if (typeof diffs == 'string') {
+        self.diffJson = diff2html.getJsonFromDiff(diffs);
+        self.render();
+      }
+
+      if (self.diffProgressBar) self.diffProgressBar.stop();
+      if (callback) callback();
     });
-
-    self.diffs(newDiffs);
-    self.totalNumberOfLines(diffs[0] ? diffs[0].totalNumberOfLines : 0);
-
+  } else {
     if (callback) callback();
-  });
+  }
 }
 
+TextDiffViewModel.prototype.render = function() {
+  if (this.diffJson.length == 0) return; // check if diffs are available (binary files do not support them)
+
+  var self = this;
+  var diffJsonCopy = JSON.parse(JSON.stringify(this.diffJson)); // make a json copy
+  var lineCount = 0;
+
+  diffJsonCopy[0].blocks = diffJsonCopy[0].blocks.reduce(function(blocks, block) {
+    var length = block.lines.length;
+    if (lineCount < self.loadCount) {
+      block.lines = block.lines.slice(0, self.loadCount - lineCount);
+      blocks.push(block);
+    }
+    lineCount += length;
+    return blocks;
+  }, []);
+
+  this.loadMoreCount(Math.min(loadLimit, Math.max(0, lineCount - this.loadCount)));
+
+  var html;
+  if (this.textDiffType() === 'sidebysidediff') {
+    html = diff2html.getPrettySideBySideHtmlFromJson(diffJsonCopy);
+  } else {
+    html = diff2html.getPrettyHtmlFromJson(diffJsonCopy);
+  }
+
+  if (ungit.config.syntaxhighlight) {
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    _.forEach(div.querySelectorAll('.d2h-code-line, .d2h-code-side-line'), function(line) {
+      line.classList.add('lang-' + diffJsonCopy[0].language);
+      var plusMinus = '';
+      if (line.classList.contains('d2h-del') || line.classList.contains('d2h-ins')) {
+        var text = line.firstChild.textContent;
+        plusMinus = text[0];
+        line.replaceChild(document.createTextNode(text.substring(1)), line.firstChild);
+      }
+
+      hljs.highlightBlock(line);
+
+      if (plusMinus) {
+        line.insertBefore(document.createTextNode(plusMinus), line.firstChild);
+      }
+    });
+    this.diffHtml(div.innerHTML);
+  } else {
+    this.diffHtml(html);
+  }
+};
+
+TextDiffViewModel.prototype.loadMore = function(callback) {
+  this.loadCount += this.loadMoreCount();
+  this.render();
+}
