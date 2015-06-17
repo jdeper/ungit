@@ -12,6 +12,9 @@ var programEvents = require('ungit-program-events');
 
 var GraphActions = {};
 module.exports = GraphActions;
+components.register('git-graph-actions', function(args) {
+	return GraphActions;
+});
 
 GraphActions.ActionBase = function(graph) {
   var self = this;
