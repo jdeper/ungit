@@ -6,6 +6,10 @@ var NodeViewModel = require('./graph-graphics/node').NodeViewModel;
 var components = require('ungit-components');
 var Vector2 = require('ungit-vector2');
 
+components.register('git-node', function(args) {
+	return new GitNodeViewModel(args.graph, args.sha1);
+});
+
 var GitNodeViewModel = function(graph, sha1) {
   NodeViewModel.call(this);
   Selectable.call(this, graph);
