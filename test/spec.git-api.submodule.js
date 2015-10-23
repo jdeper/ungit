@@ -52,7 +52,9 @@ describe('git-api submodule', function () {
 				removed: false,
 				conflict: false,
 				renamed: false,
-				type: 'text'
+				type: 'text',
+				additions: '1',
+				deletions: '0'
 			});
 			expect(res.body.files['.gitmodules']).to.eql({
 				displayName: '.gitmodules',
@@ -61,14 +63,16 @@ describe('git-api submodule', function () {
 				removed: false,
 				conflict: false,
 				renamed: false,
-				type: 'text'
+				type: 'text',
+				additions: '3',
+				deletions: '0'
 			});
 			done();
 		});
 	});
 
 	it('commit should succeed', function(done) {
-		common.post(req, '/commit', { path: testDirMain, message: 'Add submodule', files: [submodulePath, '.gitmodules'] }, done);
+		common.post(req, '/commit', { path: testDirMain, message: 'Add submodule', files: [{ name: submodulePath }, { name: '.gitmodules' }] }, done);
 	});
 
 	it('status should be empty after commit', function(done) {
@@ -96,7 +100,9 @@ describe('git-api submodule', function () {
 				removed: false,
 				conflict: false,
 				renamed: false,
-				type: 'text'
+				type: 'text',
+				additions: '0',
+				deletions: '0'
 			});
 			done();
 		});

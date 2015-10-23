@@ -28,6 +28,7 @@ var RefViewModel = function(args) {
   this.isRemoteHEAD = this.name.indexOf('/HEAD') != -1;
   this.isLocalBranch = this.name.indexOf('refs/heads/') == 0;
   this.isRemoteBranch = isRemoteBranchOrHEAD && !this.isRemoteHEAD;
+  this.isOriginBranch = this.isRemoteBranch && this.name.indexOf('/origin') > 0;
   this.isStash = this.name.indexOf('refs/stash') == 0;
   this.isHEAD = this.isLocalHEAD || this.isRemoteHEAD;
   this.isBranch = this.isLocalBranch || this.isRemoteBranch;
@@ -99,6 +100,8 @@ RefViewModel.prototype.remove = function(callback) {
     self.graph.loadNodesFromApi();
     if (url == '/remote/tags') {
       programEvents.dispatch({ event: 'request-fetch-tags' });
+    } else {
+      programEvents.dispatch({ event: 'branch-updated' });
     }
   });
 }
