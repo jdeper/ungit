@@ -33,6 +33,23 @@ exports.parseGitStatus = function(text, args) {
   return result;
 };
 
+exports.parseGitStatusNumstat = function(text) {
+  var result = {};
+  var lines = text.split('\n');
+
+  for(var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (line == '') continue;
+    var parts = line.split('\t');
+    var file = {};
+    file.additions = parts[0];
+    file.deletions = parts[1];
+    result[parts[2]] = file;
+  }
+
+  return result;
+};
+
 var authorRegexp = /([^<]+)<([^>]+)>/;
 var gitLogHeaders = {
   'Author': function(currentCommmit, author) {
@@ -83,7 +100,7 @@ exports.parseGitLog = function(data) {
     currentCommmit.parents = sha1s.slice(1);
     if (refStartIndex > 0) {
       var refs = row.substring(refStartIndex + 1, row.length - 1);
-      currentCommmit.refs = refs.split(', ');
+      currentCommmit.refs = refs.split(/ -> |, /g);
     }
     commits.push(currentCommmit);
     parser = parseHeaderLine;
@@ -248,4 +265,92 @@ exports.parseGitSubmodule = function(text, args) {
   });
 
   return submodules;
+}
+
+var updatePatchHeader = function(result, lastHeaderIndex, ignoredDiffCountTotal, ignoredDiffCountCurrent) {
+  var splitedHeader = result[lastHeaderIndex].split(' ');
+  var start = splitedHeader[1].split(','); // start of block
+  var end = splitedHeader[2].split(',');   // end of block
+  var startLeft = Math.abs(start[0]);
+  var startRight = Math.abs(start[1]);
+  var endLeft = end[0];
+  var endRight = end[1];
+
+  splitedHeader[1] = '-' + (startLeft - ignoredDiffCountTotal) + ',' + startRight;
+  splitedHeader[2] = '+' + (endLeft - ignoredDiffCountTotal) + ',' + (endRight - ignoredDiffCountCurrent);
+
+  var allSpace = true;
+  for (var i = lastHeaderIndex + 1; i < result.length; i++) {
+    if (result[i][0] != ' ') {
+      allSpace = false;
+      break;
+    }
+  }
+  if (allSpace)
+    result.splice(lastHeaderIndex, result.length - lastHeaderIndex);
+  else
+    result[lastHeaderIndex] = splitedHeader.join(' ');
+}
+
+exports.parsePatchDiffResult = function(patchLineList, text) {
+  if (!text) return {};
+
+  var lines = text.trim().split('\n');
+  var result = [];
+  var ignoredDiffCountTotal = 0;
+  var ignoredDiffCountCurrent = 0;
+  var headerIndex = null;
+  var lastHeaderIndex = -1;
+  var n = 0;
+  var selectedLines = 0;
+
+  // first add all lines until diff block header is found
+  while (!/@@ -[0-9]+,[0-9]+ \+[0-9]+,[0-9]+ @@/.test(lines[n])) {
+    result.push(lines[n]);
+    n++;
+  }
+
+  // per rest of the lines
+  while (n < lines.length) {
+    var line = lines[n];
+
+    if (/^[\-\+]/.test(line)) {
+      // Modified line
+      if (patchLineList.shift()) {
+        selectedLines++;
+        // diff is selected to be committed
+        result.push(line);
+      } else if (line[0] === '+') {
+        // added line diff is selected to be ignored
+        ignoredDiffCountCurrent++;
+      } else { // lines[0] === '-'
+        // deleted line diff is selected to be ignored
+        ignoredDiffCountCurrent--;
+        result.push(' ' + line.slice(1));
+      }
+    } else {
+      // none modified line or diff block header
+      if (/@@ -[0-9]+,[0-9]+ \+[0-9]+,[0-9]+ @@/.test(line)) {
+        // update previous header to match line numbers
+        if (lastHeaderIndex > -1) {
+          updatePatchHeader(result, lastHeaderIndex, ignoredDiffCountTotal, ignoredDiffCountCurrent);
+        }
+        // diff block header
+        ignoredDiffCountTotal += ignoredDiffCountCurrent;
+        ignoredDiffCountCurrent = 0;
+        lastHeaderIndex = result.length;
+      }
+      result.push(line);
+    }
+    n++;
+  }
+
+  // We don't want to leave out last diff block header...
+  updatePatchHeader(result, lastHeaderIndex, ignoredDiffCountTotal, ignoredDiffCountCurrent);
+  
+  if (selectedLines > 0) {
+    return result.join('\n');
+  } else {
+    return null;
+  }
 }

@@ -6,3 +6,5 @@ require('./test.screens');
 require('./test.submodules');
 require('./test.generic');
 require('./test.noheader');
+require('./test.discard');
+require('./test.branches');

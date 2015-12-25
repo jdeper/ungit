@@ -3,7 +3,7 @@ var express = require('express');
 var fs = require('fs');
 var path = require('path');
 var temp = require('temp');
-var async=  require('async');
+var async = require('async');
 var git = require('./git');
 var gitParser = require('./git-parser');
 var winston = require('winston');
@@ -12,6 +12,7 @@ var os = require('os');
 var mkdirp = require('mkdirp');
 var fileType = require('./utils/file-type.js');
 var rimraf = require('rimraf');
+var _ = require('lodash');
 
 exports.pathPrefix = '';
 
@@ -43,13 +44,16 @@ exports.registerApi = function(env) {
         }
         socket.join(path.normalize(data.path)); // join room for this path
         socket.watcherPath = data.path;
+        var workingTreeChanged = _.debounce(function() {
+          socket.emit('working-tree-changed', { repository: data.path });
+        }, 200);
         try {
           socket.watcher = fs.watch(data.path, function(event, filename) {
             // The .git dir changes on for instance 'git status', so we
             // can't trigger a change here (since that would lead to an endless
             // loop of the client getting the change and then requesting the new data)
             if (!filename || (filename != '.git' && filename.indexOf('.git/') != 0))
-              socket.emit('working-tree-changed', { repository: data.path });
+              workingTreeChanged();
           });
           winston.info('Start watching ' + socket.watcherPath);
         } catch(err) {
@@ -269,11 +273,13 @@ exports.registerApi = function(env) {
   app.get(exports.pathPrefix + '/log', ensureAuthenticated, ensurePathExists, function(req, res){
     var limit = '';
     if (req.query.limit) limit = '--max-count=' + req.query.limit;
-    git(['log', '--decorate=full', '--date=default', '--pretty=fuller', '--all', '--parents', '--numstat', '--topo-order', limit], req.query['path'])
+    git(['log', '--decorate=full', '--date=default', '--pretty=fuller', '--branches', '--tags', '--remotes', '--parents', '--no-notes', '--numstat', '--date-order', limit], req.query['path'])
       .parser(gitParser.parseGitLog)
       .always(function(err, log) {
         if (err) {
           if (err.stderr.indexOf('fatal: bad default revision \'HEAD\'') == 0)
+            res.json([]);
+          else if (/fatal: your current branch \'.+\' does not have any commits yet.*/.test(err.stderr))
             res.json([]);
           else if (err.stderr.indexOf('fatal: Not a git repository') == 0)
             res.json([]);
@@ -305,6 +311,8 @@ exports.registerApi = function(env) {
       .always(function(err, log) {
         if (err) {
           if (err.stderr.indexOf('fatal: bad default revision \'HEAD\'') == 0)
+            res.json([]);
+          else if (/fatal: your current branch \'.+\' does not have any commits yet.*/.test(err.stderr))
             res.json([]);
           else if (err.stderr.indexOf('fatal: Not a git repository') == 0)
             res.json([]);

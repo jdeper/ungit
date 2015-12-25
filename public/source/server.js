@@ -2,6 +2,8 @@
 var signals = require('signals');
 var programEvents = require('ungit-program-events');
 var _ = require('lodash');
+var Promise = require("bluebird");
+var rootPath = ungit.config && ungit.config.rootPath || '';
 
 function Server() {
 }
@@ -9,7 +11,9 @@ module.exports = Server;
 
 Server.prototype.initSocket = function() {
   var self = this;
-  this.socket = io.connect();
+  this.socket = io.connect('', {
+    path: rootPath + '/socket.io'
+  });
   this.socket.on('error', function(err) {
     self._isConnected(function(connected) {
       if (connected) throw err;
@@ -74,7 +78,7 @@ Server.prototype._httpJsonRequest = function(request, callback) {
 }
 // Check if the server is still alive
 Server.prototype._isConnected = function(callback) {
-  this._httpJsonRequest({ method: 'GET', url: '/api/ping' }, function(err, res) {
+  this._httpJsonRequest({ method: 'GET', url: rootPath + '/api/ping' }, function(err, res) {
     callback(!err && res);
   });
 }
@@ -93,7 +97,27 @@ Server.prototype._getCredentials = function(callback) {
 Server.prototype.watchRepository = function(repositoryPath, callback) {
   this.socket.emit('watch', { path: repositoryPath }, callback);
 };
-
+Server.prototype.queryPromise = function(type, url, arg) {
+  var self = this;
+  return new Promise(function (resolve, reject) {
+    self.query(type, url, arg, function(err, result) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
+Server.prototype.getPromise = function(url, arg) {
+  return this.queryPromise('GET', url, arg);
+}
+Server.prototype.postPromise = function(url, arg) {
+  return this.queryPromise('POST', url, arg);
+}
+Server.prototype.delPromise = function(url, arg) {
+  return this.queryPromise('DELETE', url, arg);
+}
 Server.prototype.get = function(path, query, callback) {
   this.query('GET', path, query, callback);
 }
@@ -108,7 +132,7 @@ Server.prototype.query = function(method, path, body, callback) {
   if (body) body.socketId = this.socketId;
   var request = {
     method: method,
-    url: '/api' + path,
+    url: rootPath + '/api' + path,
   }
   if (method == 'GET' || method == 'DELETE') request.query = body;
   else request.body = body;
@@ -137,7 +161,7 @@ Server.prototype.query = function(method, path, body, callback) {
         res: error,
         errorCode: error && error.body ? error.body.errorCode : 'unknown'
       };
-      if (callback && callback(err)) return;
+      if (callback && callback(err) || err.isIgnore) return;
       else self._onUnhandledBadBackendResponse(err, precreatedError);
     }
     else if (callback)

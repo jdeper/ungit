@@ -134,7 +134,7 @@ describe('git-api', function () {
   it('commit should fail on non-existing file', function(done) {
     req
       .post(restGit.pathPrefix + '/commit')
-      .send({ path: testDir, message: 'test', files: [testFile] })
+      .send({ path: testDir, message: 'test', files: [{ name: testFile }] })
       .set('Accept', 'application/json')
       .expect('Content-Type', /json/)
       .expect(400)
@@ -156,7 +156,9 @@ describe('git-api', function () {
         removed: false,
         conflict: false,
         renamed: false,
-        type: 'text'
+        type: 'text',
+        additions: '-',
+        deletions: '-'
       });
       done();
     });
@@ -168,7 +170,7 @@ describe('git-api', function () {
   it('commit should fail without commit message', function(done) {
     req
       .post(restGit.pathPrefix + '/commit')
-      .send({ path: testDir, message: undefined, files: [testFile] })
+      .send({ path: testDir, message: undefined, files: [{ name: testFile }] })
       .set('Accept', 'application/json')
       .expect('Content-Type', /json/)
       .expect(400)
@@ -176,7 +178,7 @@ describe('git-api', function () {
   });
 
   it('commit should succeed when there\'s files to commit', function(done) {
-    common.post(req, '/commit', { path: testDir, message: commitMessage, files: [testFile] }, done);
+    common.post(req, '/commit', { path: testDir, message: commitMessage, files: [{ name: testFile }] }, done);
   });
 
   it('log should show latest commit', function(done) {
@@ -219,7 +221,9 @@ describe('git-api', function () {
         removed: false,
         conflict: false,
         renamed: false, 
-        type: 'text'
+        type: 'text',
+        additions: '1',
+        deletions: '1'
       });
       done();
     });
@@ -234,7 +238,7 @@ describe('git-api', function () {
   });
 
   it('commit ammend should work', function(done) {
-    common.post(req, '/commit', { path: testDir, message: commitMessage, files: [testFile], amend: true }, done);
+    common.post(req, '/commit', { path: testDir, message: commitMessage, files: [{ name: testFile }], amend: true }, done);
   });
 
   it('amend should not produce additional log-entry', function(done) {
@@ -262,7 +266,9 @@ describe('git-api', function () {
         removed: false,
         conflict: false,
         renamed: false,
-        type: 'text'
+        type: 'text',
+        additions: '-',
+        deletions: '-'
       });
       done();
     });
@@ -305,7 +311,9 @@ describe('git-api', function () {
         removed: false,
         conflict: false,
         renamed: false,
-        type: 'text'
+        type: 'text',
+        additions: '-',
+        deletions: '-'
       });
       done();
     });
@@ -314,7 +322,7 @@ describe('git-api', function () {
   var commitMessage3 = 'commit3';
 
   it('commit should succeed with file in sub dir', function(done) {
-    common.post(req, '/commit', { path: testDir, message: commitMessage3, files: [testFile3] }, done);
+    common.post(req, '/commit', { path: testDir, message: commitMessage3, files: [{ name: testFile3 }] }, done);
   });
 
   it('log should show last commit', function(done) {
@@ -351,7 +359,9 @@ describe('git-api', function () {
         removed: true,
         conflict: false,
         renamed: false,
-        type: 'text'
+        type: 'text',
+        additions: '0',
+        deletions: '2'
       });
       done();
     });
@@ -360,7 +370,7 @@ describe('git-api', function () {
   var commitMessage4 = 'Removed some file';
 
   it('commit on removed file should work', function(done) {
-    common.post(req, '/commit', { path: testDir, message: commitMessage4, files: [testFile] }, done);
+    common.post(req, '/commit', { path: testDir, message: commitMessage4, files: [{ name: testFile }] }, done);
   });
 
   it('status should list nothing', function(done) {
@@ -388,7 +398,9 @@ describe('git-api', function () {
         removed: false,
         conflict: false,
         renamed: true,
-        type: 'text'
+        type: 'text',
+        additions: '2',
+        deletions: '0'
       });
       done();
     });
@@ -415,7 +427,8 @@ describe('git-api', function () {
     });
   });
 
-  it('cleaning up test dir should work', function(done) {
+  after(function(done) {
     common.post(req, '/testing/cleanup', undefined, done);
   });
+
 })

@@ -2,6 +2,7 @@ var rc = require('rc');
 var path = require('path');
 var fs = require('fs');
 var yargs = require('yargs');
+var homedir = require('os-homedir')();
 
 var defaultConfig = {
 
@@ -9,7 +10,10 @@ var defaultConfig = {
   port: 8448,
 
   // The base URL ungit will be accessible from.
-  urlBase: "http://localhost",
+  urlBase: 'http://localhost',
+
+  // The URL root path under which ungit will be accesible.
+  rootPath: '',
 
   // Directory to output log files.
   logDirectory: null,
@@ -86,7 +90,7 @@ var defaultConfig = {
   autoPruneOnFetch: true,
 
   // Directory to look for plugins
-  pluginDirectory: path.join(getUserHome(), '.ungit', 'plugins'),
+  pluginDirectory: path.join(homedir, '.ungit', 'plugins'),
 
   // Name-object pairs of configurations for plugins. To disable a plugin, use "disabled": true, for example:
   // "pluginConfigs": { "gerrit": { "disabled": true } }
@@ -100,13 +104,13 @@ var defaultConfig = {
   autoStashAndPop: true,
 
   fileSeparator: path.sep,
-  // Automatic syntax highlighting for diffs
-  syntaxhighlight: false,
-};
 
-function getUserHome() {
-  return process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE;
-}
+  // disable warning popup at discard
+  disableDiscardWarning: false,
+
+  // Duration of discard warning dialog mute time should it be muted.
+  disableDiscardMuteTime: 60 * 1000 * 5  // 5 mins
+};
 
 // Works for now but should be moved to bin/ungit
 var argv = yargs
@@ -115,7 +119,6 @@ var argv = yargs
 .example('$0 --no-logRESTRequests --logGitCommands', 'Turn off REST logging but tur on git command log')
 .help('help')
 .version('ungit version: ' + JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'))).version + '\n', 'version')
-.strict()
 .alias('b', 'launchBrowser')
 .alias('h', 'help')
 .alias('o', 'gitVersionCheckOverride')
@@ -125,6 +128,7 @@ var argv = yargs
 .describe('cliconfigonly', 'Ignore the default configuration points and only use parameters sent on the command line')
 .describe('port', 'The port ungit is exposed on')
 .describe('urlBase', 'The base URL ungit will be accessible from')
+.describe('rootPath', 'The root path ungit will be accessible from')
 .describe('logDirectory', 'Directory to output log files')
 .describe('logRESTRequests', 'Write REST requests to the log')
 .describe('logGitCommands', 'Write git commands issued to the log')
@@ -151,7 +155,31 @@ var argv = yargs
 .describe('autoStashAndPop', 'Used for development purposes')
 .describe('dev', 'Automatically does stash -> operation -> stash pop when you checkout, reset or cherry pick')
 .describe('fileSeparator', 'OS dependent file separator')
-.describe('syntaxhighlight', 'Automatic syntax highlighting for diffs');
+.describe('disableDiscardWarning', 'disable warning popup at discard')
+.describe('disableDiscardMuteTime', 'duration of discard warning dialog mute time should it be muted');
+
+// If not triggered by test, then do strict option check
+if (argv.$0.indexOf('mocha') === -1) {
+  argv = argv.strict();
+}
+
+function cleanUpRootPath() {
+  var currentRootPath = module.exports.rootPath;
+
+  if (typeof currentRootPath !== 'string') {
+    currentRootPath = '';
+  } else if (currentRootPath !== '') {
+    // must start with a slash
+    if (currentRootPath.charAt(0) !== '/') {
+      currentRootPath = '/' + currentRootPath;
+    }
+    // can not end with a trailing slash
+    if (currentRootPath.charAt(currentRootPath.length - 1) === '/') {
+      currentRootPath = currentRootPath.substring(0, currentRootPath.length - 1);
+    }
+  }
+  module.exports.rootPath = currentRootPath;
+}
 
 // For testing, $0 is grunt.  For credential-parser test, $0 is node
 // When ungit is started normaly, $0 == ungit, and non-hyphenated options exists, show help and exit.
@@ -163,3 +191,6 @@ if (argv.$0 === 'ungit' && argv._ && argv._.length > 0) {
 } else {
   module.exports = rc('ungit', argv.default(defaultConfig).argv);
 }
+module.exports.homedir = homedir;
+
+cleanUpRootPath();

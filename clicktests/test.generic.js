@@ -4,7 +4,6 @@ var testsuite = require('./testsuite');
 var Environment = require('./environment');
 var uiInteractions = require('./ui-interactions.js');
 var webpage = require('webpage');
-
 var page = webpage.create();
 var suite = testsuite.newSuite('generic', page);
 
@@ -13,7 +12,7 @@ var environment;
 var testRepoPath;
 
 suite.test('Init', function(done) {
-  environment = new Environment(page);
+  environment = new Environment(page, { serverStartupOptions: ['--no-disableDiscardWarning'], rootPath: '/deep/root/path/to/app' });
   environment.init(function(err) {
     if (err) return done(err);
     testRepoPath = environment.path + '/testrepo';
@@ -107,15 +106,20 @@ suite.test('Test showing commit side by side diff between two commits', function
   });
 });
 
-suite.test('Should be possible to discard a created file', function(done) {
+suite.test('Should be possible to discard a created file and ensure patching is not avaliable for new file', function(done) {
   environment.createTestFile(testRepoPath + '/testfile2.txt', function(err) {
     if (err) return done(err);
     helpers.waitForElement(page, '[data-ta-container="staging-file"]', function() {
-      helpers.click(page, '[data-ta-clickable="discard-file"]');
-      helpers.click(page, '[data-ta-clickable="yes"]');
-      helpers.waitForNotElement(page, '[data-ta-container="staging-file"]', function() {
-        done();
-      });
+      helpers.click(page, '[data-ta-clickable="show-stage-diffs"]');
+      setTimeout(function() {
+        helpers.waitForNotElement(page, '[data-ta-container="patch-file"]', function() {
+          helpers.click(page, '[data-ta-clickable="discard-file"]');
+          helpers.click(page, '[data-ta-clickable="yes"]');
+          helpers.waitForNotElement(page, '[data-ta-container="staging-file"]', function() {
+            done();
+          });
+        });
+      }, 1000);
     });
   });
 });
@@ -152,17 +156,49 @@ suite.test('Should be possible to create and destroy a tag', function(done) {
 });
 
 suite.test('Commit changes to a file', function(done) {
+environment.changeTestFile(testRepoPath + '/testfile.txt', function(err) {
+  if (err) return done(err);
+  helpers.waitForElement(page, '[data-ta-container="staging-file"]', function() {
+    helpers.click(page, '[data-ta-input="staging-commit-title"]')
+    helpers.write(page, 'My commit message');
+    setTimeout(function() {
+      helpers.click(page, '[data-ta-clickable="commit"]');
+      helpers.waitForNotElement(page, '[data-ta-container="staging-file"]', function() {
+        done();
+        });
+      }, 100);
+    });
+  });
+});
+
+suite.test('Show stats for changed file and discard it', function(done) {
   environment.changeTestFile(testRepoPath + '/testfile.txt', function(err) {
     if (err) return done(err);
-    helpers.waitForElement(page, '[data-ta-container="staging-file"]', function() {
-      helpers.click(page, '[data-ta-input="staging-commit-title"]')
-      helpers.write(page, 'My commit message');
-      setTimeout(function() {
-        helpers.click(page, '[data-ta-clickable="commit"]');
+    helpers.waitForElement(page, '[data-ta-container="staging-file"] .additions', function(element) {
+      if (element.textContent != '+1') {
+        return done(new Error('file additions do not match: expected: "+1" but was "' + element.textContent + '"'));
+      }
+      helpers.waitForElement(page, '[data-ta-container="staging-file"] .deletions', function(element) {
+        if (element.textContent != '-1') {
+          return done(new Error('file deletions do not match: expected: "-1" but was "' + element.textContent + '"'));
+        }
+        helpers.click(page, '[data-ta-clickable="discard-file"]');
+        helpers.click(page, '[data-ta-clickable="yes"]');
         helpers.waitForNotElement(page, '[data-ta-container="staging-file"]', function() {
           done();
         });
-      }, 100);
+      });
+    });
+  });
+});
+
+suite.test('Should be possible to patch a file', function(done) {
+  environment.changeTestFile(testRepoPath + '/testfile.txt', function(err) {
+    if (err) return done(err);
+    uiInteractions.patch(page, 'Patch', function() {
+      helpers.waitForElement(page, '[data-ta-container="node"]', function() {
+        done();
+      });
     });
   });
 });
@@ -210,7 +246,6 @@ suite.test('Should be possible to click refresh button', function(done) {
 });
 
 // Shutdown
-
 suite.test('Go to home screen', function(done) {
   helpers.click(page, '[data-ta-clickable="home-link"]');
   helpers.waitForElement(page, '[data-ta-container="home-page"]', function() {
@@ -221,10 +256,10 @@ suite.test('Go to home screen', function(done) {
 suite.test('Shutdown server should bring you to connection lost page', function(done) {
   environment.shutdown(function() {
     helpers.waitForElement(page, '[data-ta-container="user-error-page"]', function() {
+      page.close();
       done();
     });
-  });
+  }, true);
 });
-
 
 testsuite.runAllSuits();

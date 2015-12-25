@@ -1,6 +1,4 @@
-#!/usr/bin/env node
 var startLaunchTime = Date.now();
-var forever = require('forever-monitor');
 var config = require('../source/config');
 var open = require('open');
 var path = require('path');
@@ -11,36 +9,26 @@ var BugTracker = require('../source/bugtracker');
 var bugtracker = new BugTracker('launcher');
 var usageStatistics = require('../source/usage-statistics');
 
+var app = require('app');  // Module to control application life.
+var BrowserWindow = require('browser-window');  // Module to create native browser window.
+
 process.on('uncaughtException', function(err) {
   console.error(err.stack.toString());
   async.parallel([
     bugtracker.notify.bind(bugtracker, err, 'ungit-launcher'),
     usageStatistics.addEvent.bind(usageStatistics, 'launcher-exception')
   ], function() {
-    process.exit();
+    app.quit();
   });
 });
 
-var child = new (forever.Monitor)(path.join(__dirname, '..', 'source', 'server.js'), {
-  silent: false,
-  minUptime: 2000,
-  max: config.maxNAutoRestartOnCrash,
-  cwd: path.join(process.cwd(), '..'),
-  options: process.argv.slice(2),
-  env: { LANG: 'en_US', LC_ALL: 'C' }
-});
-
-child.on('exit', function (res) {
-  console.log('Stopped keeping ungit alive');
-});
-
 function launch(callback) {
-  var currentUrl = config.urlBase + ':' + config.port + config.rootPath;
+  var currentUrl = config.urlBase + ':' + config.port;
   if (config.forcedLaunchPath === undefined) currentUrl += '/#/repository?path=' + encodeURIComponent(process.cwd());
   else if (config.forcedLaunchPath !== null && config.forcedLaunchPath !== '') currentUrl += '/#/repository?path=' + encodeURIComponent(config.forcedLaunchPath);
   console.log('Browse to ' + currentUrl);
   if (config.launchBrowser && !config.launchCommand) {
-    open(currentUrl);
+    mainWindow.loadUrl(currentUrl);
   } else if (config.launchCommand) {
     var command = config.launchCommand.replace(/%U/g, currentUrl);
     console.log('Running custom launch command: ' + command);
@@ -50,24 +38,10 @@ function launch(callback) {
         return;
       }
       if (config.launchBrowser)
-        open(currentUrl);
+        mainWindow.loadUrl(currentUrl);
     });
   }
 }
-
-function startupListener(data) {
-  if (data.toString().indexOf('## Ungit started ##') >= 0) {
-    launch(function(err) {
-      if (err) console.log(err);
-    });
-    child.removeListener('stdout', startupListener);
-    var launchTime = (Date.now() - startLaunchTime);
-    console.log('Took ' + launchTime + 'ms to start server.');
-    usageStatistics.addEvent('server-start', { launchTimeMs: launchTime });
-  }
-}
-
-child.on('stdout', startupListener);
 
 function checkIfUngitIsRunning(callback) {
   // Fastest way to find out if a port is used or not/i.e. if ungit is running
@@ -84,15 +58,36 @@ function checkIfUngitIsRunning(callback) {
     }
   });
 }
+  
+var mainWindow = null;
 
-checkIfUngitIsRunning(function(err1, ungitRunning) {
-  if (ungitRunning) {
-    console.log('Ungit server already running');
-    launch(function(err) {
-      if (err) console.log(err);
-    });
-  }
-  else {
-    child.start();
-  }
+app.on('window-all-closed', function() {
+    app.quit();
+});
+
+app.on('ready', function() {
+  checkIfUngitIsRunning(function(err1, ungitRunning) {
+    if (ungitRunning) {
+      console.log('Ungit instance is already running');
+      app.quit();
+    }
+    else {
+      var server = require('../source/server');
+      server.started.add(function() {
+        launch(function(err) {
+          if (err) console.log(err);
+        })
+          
+        var launchTime = (Date.now() - startLaunchTime);
+        console.log('Took ' + launchTime + 'ms to start server.');
+        usageStatistics.addEvent('server-start', { launchTimeMs: launchTime });
+      });
+      
+      mainWindow = new BrowserWindow({width: 1366, height: 768});
+      
+      mainWindow.on('closed', function() {
+        mainWindow = null;
+      });
+    }
+  });
 });

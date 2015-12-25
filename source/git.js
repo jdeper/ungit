@@ -8,7 +8,9 @@ var winston = require('winston');
 var inherits = require('util').inherits;
 var addressParser = require('./address-parser');
 var GitTask = require('./git-task');
+var _ = require('lodash');
 var isWindows = /^win/.test(process.platform);
+var Promise = require('bluebird');
 
 var gitConfigArguments = ['-c', 'color.ui=false', '-c', 'core.quotepath=false', '-c', 'core.pager=cat'];
 
@@ -53,7 +55,7 @@ GitExecutionTask.prototype.timeout = function(timeout) {
 git.runningTasks = [];
 
 var gitQueue = async.queue(function (task, callback) {
-  if (config.logGitCommands) winston.info('git executing: ' + task.repoPath + ' ' + task.commands);
+  if (config.logGitCommands) winston.info('git executing: ' + task.repoPath + ' ' + task.commands.join(' '));
   git.runningTasks.push(task);
   task.startTime = Date.now();
 
@@ -79,9 +81,12 @@ var gitQueue = async.queue(function (task, callback) {
   gitProcess.stderr.on('data', function(data) {
     stderr += data.toString();
   });
+  gitProcess.on('error', function (error) {
+      callback(error);
+  });
 
   gitProcess.on('close', function (code) {
-    if (config.logGitCommands) winston.info('git result (first 400 bytes): ' + task.command + '\n' + stderr.slice(0, 400) + '\n' + stdout.slice(0, 400));
+    if (config.logGitCommands) winston.info('git result (first 400 bytes): ' + task.commands.join(' ') + '\n' + stderr.slice(0, 400) + '\n' + stdout.slice(0, 400));
 
     if (allowedCodes.indexOf(code) < 0) {
       var err = {};
@@ -141,23 +146,65 @@ git.queueTask = function(task) {
 
 git.status = function(repoPath, file) {
   var task = new GitTask();
-  var gitTask = git(['status', '-s', '-b', '-u', (file ? file : '')], repoPath)
-    .parser(gitParser.parseGitStatus)
-    .fail(task.setResult)
-    .done(function(status) {
-      // From http://stackoverflow.com/questions/3921409/how-to-know-if-there-is-a-git-rebase-in-progress
-      status.inRebase = fs.existsSync(path.join(repoPath, '.git', 'rebase-merge')) ||
-        fs.existsSync(path.join(repoPath, '.git', 'rebase-apply'));
 
-      status.inMerge = fs.existsSync(path.join(repoPath, '.git', 'MERGE_HEAD'));
+  task.start = function() {
+    async.parallel([
+      function(done) {
+        git(['status', '-s', '-b', '-u', (file || '')], repoPath)
+          .parser(gitParser.parseGitStatus)
+          .fail(done)
+          .done(function(status) {
+            // From http://stackoverflow.com/questions/3921409/how-to-know-if-there-is-a-git-rebase-in-progress
+            status.inRebase = fs.existsSync(path.join(repoPath, '.git', 'rebase-merge')) ||
+              fs.existsSync(path.join(repoPath, '.git', 'rebase-apply'));
 
-      if (status.inMerge) {
-        status.commitMessage = fs.readFileSync(path.join(repoPath, '.git', 'MERGE_MSG'), { encoding: 'utf8' });
+            status.inMerge = fs.existsSync(path.join(repoPath, '.git', 'MERGE_HEAD'));
+
+            if (status.inMerge) {
+              status.commitMessage = fs.readFileSync(path.join(repoPath, '.git', 'MERGE_MSG'), { encoding: 'utf8' });
+            }
+
+            done(null, status);
+          }).start();
+      },
+      function(done) {
+        // stats for staged files
+        git(['diff', '--numstat', '--cached', '--', (file || '')], repoPath)
+          .parser(gitParser.parseGitStatusNumstat)
+          .always(function(err, numstats) {
+            done(null, numstats || {});
+          }).start();
+      },
+      function(done) {
+        // stats for unstaged files
+        git(['diff', '--numstat', '--', (file || '')], repoPath)
+          .parser(gitParser.parseGitStatusNumstat)
+          .always(function(err, numstats) {
+            done(null, numstats || {});
+          }).start();
       }
+    ], function(err, results) {
+      if (err) {
+        task.setResult(err);
+        return;
+      }
+
+      var status = results[0];
+      var numstats = results.slice(1).reduce(_.extend, {});
+
+      // merge numstats
+      Object.keys(status.files).forEach(function(filename) {
+        // git diff returns paths relative to git repo but git status does not
+        var absoluteFilename = filename.replace(/\.\.\//g, '');
+        var stats = numstats[absoluteFilename] || { additions: '-', deletions: '-' };
+        status.files[filename].additions = stats.additions;
+        status.files[filename].deletions = stats.deletions;
+      });
 
       task.setResult(null, status);
     });
-  task.started(gitTask.start);
+  };
+
   return task;
 }
 
@@ -292,58 +339,104 @@ git.discardChangesInFile = function(repoPath, filename) {
   return task;
 }
 
+var parseDiffForPatch = function (patch, repoPath) {
+  return new Promise(function (resolve, reject) {
+    git(['diff', patch.name], repoPath)
+      .fail(reject)
+      .done(resolve).start();
+  });
+}
+
+var applyPatchedDiff = function(patch, repoPath, patchedDiff) {
+  return new Promise(function (resolve, reject) {
+    if (patchedDiff) {
+      git(['apply', '--cached'], repoPath)
+        .fail(reject)
+        .done(resolve)
+        .started(function() {
+          this.process.stdin.end(patchedDiff + '\n\n');
+        }).start();
+    } else {
+      resolve();
+    }
+  });
+}
+
 git.updateIndexFromFileList = function(repoPath, files) {
   var task = new GitTask();
+  var statusTask;
 
-  var statusTask = git.status(repoPath)
-    .fail(task.setResult)
-    .done(function(status) {
-      var toAdd = [];
-      var toRemove = [];
-      for(var v in files) {
-        var file = files[v];
-        var fileStatus = status.files[file] || status.files[path.relative(repoPath, file)];
-        if (!fileStatus) {
-          task.setResult({ error: 'No such file in staging: ' + file });
-          return;
-        }
-        if (fileStatus.removed) toRemove.push(file);
-        else toAdd.push(file);
+  new Promise(function (resolve, reject) {
+    statusTask = git.status(repoPath)
+      .fail(reject)
+      .done(resolve);
+  }).then(function(status) {
+    var toAdd = [];
+    var toRemove = [];
+    var toPatch = [];
+
+    for(var v in files) {
+      var file = files[v];
+      var fileStatus = status.files[file.name] || status.files[path.relative(repoPath, file.name)];
+      if (!fileStatus) {
+        task.setResult({ error: 'No such file in staging: ' + file.name });
+        return;
       }
 
-      async.series([
-        function(done) {
-          if (toAdd.length == 0) done();
-          else {
-            git(['update-index', '--add', '--stdin'], repoPath)
-              .always(done)
-              .started(function() {
-                var filesToAdd = toAdd.map(function(file) { return file.trim(); }).join('\n');
-                this.process.stdin.end(filesToAdd);
-              })
-              .start();
-          }
-        },
-        function(done) {
-          if (toRemove.length == 0) done();
-          else {
-            git(['update-index', '--remove', '--stdin'], repoPath)
-              .always(done)
-              .started(function() {
-                var filesToRemove = toRemove.map(function(file) { return file.trim(); }).join('\n');
-                this.process.stdin.end(filesToRemove);
-              })
-              .start();
-          }
-        }
-      ], function(err) {
-        if (err) return task.setResult(err);
-        task.setResult();
-      });
+      if (fileStatus.removed) toRemove.push(file.name);
+      else if (files[v].patchLineList) toPatch.push(file)
+      else toAdd.push(file.name);
+    }
 
+    var addPromise = new Promise(function (resolve, reject) {
+      if (toAdd.length == 0) {
+        resolve();
+        return;
+      }
+      git(['update-index', '--add', '--stdin'], repoPath)
+        .done(resolve)
+        .fail(reject)
+        .started(function() {
+          var filesToAdd = toAdd.map(function(file) { return file.trim(); }).join('\n');
+          this.process.stdin.end(filesToAdd);
+        }).start();
     });
-  task.started(statusTask.start);
 
+    var removePromise = new Promise(function (resolve, reject) {
+      if (toRemove.length == 0) {
+        resolve();
+        return;
+      }
+      git(['update-index', '--remove', '--stdin'], repoPath)
+        .done(resolve)
+        .fail(reject)
+        .started(function() {
+          var filesToRemove = toRemove.map(function(file) { return file.trim(); }).join('\n');
+          this.process.stdin.end(filesToRemove);
+        }).start();
+    });
+
+    var patchPromise = new Promise(function (resolve, reject) {
+      if (toPatch.length == 0) {
+        resolve();
+        return;
+      }
+
+      var diffPatchArray = [];
+      // handle patchings per file bases
+      for (var n = 0; n < toPatch.length; n++) {
+        diffPatchArray.push(parseDiffForPatch(toPatch[n], repoPath)
+          .then(gitParser.parsePatchDiffResult.bind(null, toPatch[n].patchLineList))
+          .then(applyPatchedDiff.bind(null, toPatch[n], repoPath)));
+      }
+
+      Promise.all(diffPatchArray).then(resolve, reject);
+    });
+
+    return Promise.join(addPromise, removePromise, patchPromise);
+  }).then(task.setResult.bind(null, null), task.setResult);
+
+  task.started(statusTask.start);
   return task;
 }
 
@@ -353,14 +446,26 @@ git.commit = function(repoPath, amend, message, files) {
   if (message === undefined)
     return task.setResult({ error: 'Must specify commit message' });
 
-  if ((!(files instanceof Array) || files.length == 0) && !amend)
+  if ((!(Array.isArray(files)) || files.length == 0) && !amend)
     return task.setResult({ error: 'Must specify files or amend to commit' });
 
   var updateIndexTask = git.updateIndexFromFileList(repoPath, files)
     .fail(task.setResult)
     .done(function() {
       git(['commit', (amend ? '--amend' : ''), '--file=-'], repoPath)
-        .always(task.setResult)
+        .always(function(err) {
+          // ignore the case where nothing were added to be committed
+          if (!err || err.stdout.indexOf("Changes not staged for commit") > -1) {
+            task.setResult();
+          } else {
+            try {
+              task.setResult(err);
+            } catch (e) {
+              // log if json result is already sent...  should be fixed with promise impl
+              console.log(e);
+            }
+          }
+        })
         .started(function() {
           this.process.stdin.end(message);
         })

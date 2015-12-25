@@ -6,6 +6,7 @@ var npm = require('npm');
 var semver = require('semver');
 var async = require('async');
 var browserify = require('browserify');
+var electronPackager = require('electron-packager');
 
 module.exports = function(grunt) {
 
@@ -16,7 +17,7 @@ module.exports = function(grunt) {
     less: {
       production: {
         files: {
-          "public/css/styles.css": ["public/less/styles.less", "public/vendor/css/animate.css", "public/less/d2h.less", "public/less/highlight.less"],
+          "public/css/styles.css": ["public/less/styles.less", "public/vendor/css/animate.css", "public/less/d2h.less"],
           "components/commit/commit.css": ["components/commit/commit.less"],
           "components/commitdiff/commitdiff.css": ["components/commitdiff/commitdiff.less"],
           "components/graph/graph.css": ["components/graph/graph.less"],
@@ -174,6 +175,62 @@ module.exports = function(grunt) {
           'test/**/*.js',
         ]
       }
+    },
+    copy: {
+      main: {
+        files: [
+          // includes files within path
+          { expand: true, flatten: true, src: ['node_modules/octicons/octicons/octicons.ttf'], dest: 'public/css/' },
+          { expand: true, flatten: true, src: ['node_modules/octicons/octicons/octicons.woff'], dest: 'public/css/' }
+        ]
+      },
+      electron: {
+        files: [
+          { expand: true, src: ['public/**'], dest: 'build/resource/' },
+          { expand: true, src: ['source/**'], dest: 'build/resource/' },
+          { expand: true, src: ['components/**'], dest: 'build/resource/' },
+          { expand: true, src: ['assets/**'], dest: 'build/resource/' },
+          { expand: true, src: ['node_modules/**'], dest: 'build/resource/' },
+          { expand: true, src: ['package.json'], dest: 'build/resource/'}
+        ]
+      }
+    },
+    clean: {
+      electron: ['./build'],
+      coverage: ['./coverage'],
+      'coverage-unit': ['./coverage/coverage-unit']
+    },
+    electron: {
+      package: {
+        options: {
+          name: 'ungit',
+          dir: './build/resource',
+          out: './build',
+          icon: './icon.ico',
+          version: '0.31.1',
+          platform: 'all',
+          arch: 'all',
+          asar: true,
+          prune: true,
+          'version-string': {
+            FileDescription : 'ungit',
+            OriginalFilename : 'ungit.exe',
+            FileVersion : '<%= version %>',
+            ProductVersion : '<%= version %>',
+            ProductName : 'ungit',
+            InternalName : 'ungit.exe'
+          }
+        }
+      }
+    },
+    mocha_istanbul: {
+      unit: {
+        src: './test',
+        options: {
+          coverageFolder: './coverage/coverage-unit',
+          mask: 'spec.*.js'
+        }
+      }
     }
   });
 
@@ -185,12 +242,10 @@ module.exports = function(grunt) {
     });
     b.add('./public/source/main.js');
     b.require('./public/source/main.js', { expose: 'ungit-main' });
-
     b.require('./public/source/components.js', { expose: 'ungit-components' });
     b.require('./public/source/program-events.js', { expose: 'ungit-program-events' });
     b.require('./public/source/navigation.js', { expose: 'ungit-navigation' });
     b.require('./public/source/main.js', { expose: 'ungit-main' });
-    b.require('./source/utils/vector2.js', { expose: 'ungit-vector2' });
     b.require('./source/address-parser.js', { expose: 'ungit-address-parser' });
     b.require('knockout', { expose: 'knockout' });
     b.require('lodash', { expose: 'lodash' });
@@ -204,7 +259,8 @@ module.exports = function(grunt) {
     b.require('util', { expose: 'util' });
     b.require('path', { expose: 'path' });
     b.require('diff2html', { expose: 'diff2html' });
-    b.require('highlight.js', { expose: 'highlight.js' });
+    b.require('bluebird', { expose: 'bluebird' });
+    b.require('./node_modules/snapsvg/src/mina.js', { expose: 'mina' });
     var outFile = fs.createWriteStream('./public/js/ungit.js');
     outFile.on('close', function() {
       done();
@@ -219,12 +275,17 @@ module.exports = function(grunt) {
         bundleExternal: false,
         debug: true
       });
-      b.add('./components/' + component + '/' + component + '.js');
+      var src = './components/' + component + '/' + component + '.js';
+      if (!fs.existsSync(src)) {
+        grunt.log.error(src + ' does not exist. If this component is obsolete, ' +
+          'please remove that directory or perform a clean build.');
+        return;
+      }
+      b.add(src);
       b.external(['ungit-components',
               'ungit-program-events',
               'ungit-navigation',
               'ungit-main',
-              'ungit-vector2',
               'ungit-address-parser',
               'knockout',
               'lodash',
@@ -286,8 +347,6 @@ module.exports = function(grunt) {
         async.map.bind(null, Object.keys(tempPackageJson.dependencies), function(dep, callback) {
           // Keep forever-monitor at 1.1.0 until https://github.com/nodejitsu/forever-monitor/issues/38 is fixed
           if (dep == 'forever-monitor') return callback();
-          // Socket.io 1.0.0-pre didn't work with phantomjs, so keep it at 0.9.16 for now
-          if (dep == 'socket.io') return callback();
           // Superagent 1.x has a new api, need to upgrade to that if we want to bump
           if (dep == 'superagent') return callback();
 
@@ -310,6 +369,17 @@ module.exports = function(grunt) {
     });
   });
 
+  grunt.registerMultiTask('electron', 'Package Electron apps', function () {
+    electronPackager(this.options(), this.async());
+  });
+
+  grunt.event.on('coverage', function(lcovFileContents, done){
+    // Check below on the section "The coverage event"
+    console.log(lcovFileContents);
+    console.log('\n\n=== html report: ./coverage/coverage-unit/lcove-report/index.html ===\n\n');
+    done();
+  });
+
   grunt.loadNpmTasks('grunt-contrib-less');
   grunt.loadNpmTasks('grunt-contrib-watch');
   grunt.loadNpmTasks('grunt-lineending');
@@ -319,9 +389,12 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-contrib-imagemin');
   grunt.loadNpmTasks('grunt-image-embed');
   grunt.loadNpmTasks('grunt-contrib-jshint');
+  grunt.loadNpmTasks('grunt-contrib-copy');
+  grunt.loadNpmTasks('grunt-contrib-clean');
+  grunt.loadNpmTasks('grunt-mocha-istanbul');
 
   // Default task, builds everything needed
-  grunt.registerTask('default', ['less:production', 'jshint', 'browserify-common', 'browserify-components', 'lineending:production', 'imagemin:default', 'imageEmbed:default']);
+  grunt.registerTask('default', ['less:production', 'jshint', 'browserify-common', 'browserify-components', 'lineending:production', 'imageEmbed:default', 'copy:main', 'imagemin:default']);
 
   // Run tests
   grunt.registerTask('unittest', ['mochaTest']);
@@ -333,4 +406,9 @@ module.exports = function(grunt) {
   // Same as publish but for minor version
   grunt.registerTask('publishminor', ['default', 'test', 'release:minor']);
 
+  // Create electron package
+  grunt.registerTask('package', ['clean:electron', 'copy:electron', 'electron']);
+
+  // run unit test coverage, assumes project is compiled
+  grunt.registerTask('coverage-unit', ['clean:coverage-unit', 'mocha_istanbul:unit']);
 };

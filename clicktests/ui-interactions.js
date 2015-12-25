@@ -40,15 +40,14 @@ uiInteractions.createTag = function(page, name, callback) {
 
 uiInteractions.moveRef = function(page, ref, targetNodeCommitTitle, callback) {
   helpers.click(page, '[data-ta-clickable="branch"][data-ta-name="' + ref + '"]');
-  helpers.mousemove(page, '[data-ta-node-title="' + targetNodeCommitTitle + '"] [data-ta-action="move"][data-ta-visible="true"]');
-  setTimeout(function() { // Wait for next animation frame
+  helpers.waitForElement(page, '[data-ta-node-title="' + targetNodeCommitTitle + '"] [data-ta-action="move"][data-ta-visible="true"]', function() {
     helpers.click(page, '[data-ta-node-title="' + targetNodeCommitTitle + '"] [data-ta-action="move"][data-ta-visible="true"]');
     helpers.waitForNotElement(page, '[data-ta-action="move"][data-ta-visible="true"]', function() {
       setTimeout(function() {
         callback();
       }, 500);
-    })
-  }, 200);
+    });
+  });
 }
 
 
@@ -87,5 +86,17 @@ uiInteractions.checkout = function(page, branch, callback) {
   helpers.click(page, '[data-ta-action="checkout"][data-ta-visible="true"]');
   helpers.waitForElement(page, '[data-ta-clickable="branch"][data-ta-name="' + branch + '"][data-ta-current="true"]', function() {
     callback();
+  });
+}
+
+uiInteractions.patch = function(page, commitMessage, callback) {
+  helpers.waitForElement(page, '[data-ta-container="staging-file"]', function() {
+    helpers.click(page, '[data-ta-clickable="show-stage-diffs"]');
+    helpers.waitForElement(page, '[data-ta-clickable="patch-file"]', function() {
+      helpers.click(page, '[data-ta-clickable="patch-file"]');
+      helpers.waitForElement(page, '[data-ta-clickable="patch-line-input"]', function() {
+        uiInteractions.commit(page, commitMessage, callback);
+      });
+    });
   });
 }
