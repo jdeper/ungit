@@ -15,7 +15,6 @@ exports.pathPrefix = '';
 
 exports.registerApi = function(env) {
   var app = env.app;
-  var server = env.server;
   var ensureAuthenticated = env.ensureAuthenticated || function(req, res, next) { next(); };
   var config = env.config;
   var io = env.socketIO;

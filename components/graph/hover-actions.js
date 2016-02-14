@@ -27,7 +27,6 @@ function HoverViewModel() {
 }
 
 function MergeViewModel(graph, headNode, node) {
-  var self = this;
   HoverViewModel.call(this);
   this.graph = graph;
   this.bgEdges = [ getEdgeModel(headNode.cx(), (headNode.cy() - 110), headNode.cx(), headNode.cy()),

@@ -5,7 +5,6 @@ var fileType = require('../../source/utils/file-type.js');
 var programEvents = require('ungit-program-events');
 
 var CommitLineDiff = function(args) {
-  var self = this;
   this.added = ko.observable(args.fileLineDiff[0]);
   this.removed = ko.observable(args.fileLineDiff[1]);
   this.fileName = ko.observable(args.fileLineDiff[2]);

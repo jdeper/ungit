@@ -376,7 +376,6 @@ FileViewModel.prototype.discardChanges = function() {
   }
 }
 FileViewModel.prototype.ignoreFile = function() {
-  var self = this;
   this.server.post('/ignorefile', { path: this.staging.repoPath, file: this.name() }, function(err) {
     if (err && err.errorCode == 'file-already-git-ignored') {
       // The file was already in the .gitignore, so force an update of the staging area (to hopefull clear away this file)

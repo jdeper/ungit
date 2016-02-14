@@ -287,7 +287,6 @@ exports.parsePatchDiffResult = function(patchLineList, text) {
   var result = [];
   var ignoredDiffCountTotal = 0;
   var ignoredDiffCountCurrent = 0;
-  var headerIndex = null;
   var lastHeaderIndex = -1;
   var n = 0;
   var selectedLines = 0;

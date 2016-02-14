@@ -35,7 +35,6 @@ module.exports = BugTracker;
 BugTracker.prototype.notify = function(exception, clientName, callback) {
   if (!config.bugtracking) return;
 
-  var self = this;
   if (!os) os = require('os');
   if (!superagent) superagent = require('superagent');
   if (!uuid) uuid = require('uuid');

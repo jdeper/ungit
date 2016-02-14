@@ -25,7 +25,6 @@ describe('cache', function () {
   });
 
   it('should work when failing', function(done) {
-    var i = 0;
     var f = cache(function(callback) {
       setTimeout(function() {
         callback('error');

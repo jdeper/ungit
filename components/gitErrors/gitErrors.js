@@ -9,7 +9,6 @@ components.register('gitErrors', function(args) {
 });
 
 var GitErrorsViewModel = function(server, repoPath) {
-  var self = this;
   this.server = server;
   this.repoPath = repoPath;
   this.gitErrors = ko.observableArray();

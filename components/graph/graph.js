@@ -281,7 +281,6 @@ GraphViewModel.prototype.updateBranches = function() {
 }
 GraphViewModel.prototype.setRemoteTags = function(remoteTags) {
   var self = this;
-  var nodeIdsToRemoteTags = {};
   remoteTags.forEach(function(ref) {
     if (ref.name.indexOf('^{}') != -1) {
       var tagRef = ref.name.slice(0, ref.name.length - '^{}'.length);

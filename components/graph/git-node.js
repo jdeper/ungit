@@ -176,7 +176,6 @@ GitNodeViewModel.prototype.createTag = function() {
     });
 }
 GitNodeViewModel.prototype.toggleSelected = function() {
-  var self = this;
   var beforeThisCR = this.commitComponent.element().getBoundingClientRect();
   var beforeBelowCR = null;
   if (this.belowNode) {
