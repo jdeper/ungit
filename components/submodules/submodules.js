@@ -8,7 +8,6 @@ components.register('submodules', function(args) {
 });
 
 function SubmodulesViewModel(server, repoPath) {
-  var self = this;
   this.repoPath = repoPath;
   this.server = server;
   this.submodules = ko.observableArray();

@@ -300,7 +300,6 @@ GraphActions.CherryPick.prototype.text = 'Cherry pick';
 GraphActions.CherryPick.prototype.style = 'cherry-pick';
 GraphActions.CherryPick.prototype.icon = 'octicon octicon-circuit-board';
 GraphActions.CherryPick.prototype.perform = function(callback) {
-  var self = this;
   this.server.post('/cherrypick', { path: this.graph.repoPath, name: this.node.sha1 }, function(err) {
     callback();
     if (err && err.errorCode == 'merge-failed') return true;
@@ -348,7 +347,6 @@ GraphActions.Revert.prototype.text = 'Revert';
 GraphActions.Revert.prototype.style = 'revert';
 GraphActions.Revert.prototype.icon = 'octicon octicon-history';
 GraphActions.Revert.prototype.perform = function(callback) {
-  var self = this;
   this.server.postPromise('/revert', { path: this.graph.repoPath, commit: this.node.sha1 })
     .finally(callback);
 }

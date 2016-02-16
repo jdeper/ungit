@@ -108,7 +108,6 @@ var windowTitle = new WindowTitle();
 windowTitle.update();
 
 var AppContainerViewModel = function() {
-  var self = this;
   this.content = ko.observable();
   this.crash = ko.observable();
 }

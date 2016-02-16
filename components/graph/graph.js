@@ -281,23 +281,13 @@ GraphViewModel.prototype.updateBranches = function() {
 }
 GraphViewModel.prototype.setRemoteTags = function(remoteTags) {
   var self = this;
-  var nodeIdsToRemoteTags = {};
   remoteTags.forEach(function(ref) {
     if (ref.name.indexOf('^{}') != -1) {
       var tagRef = ref.name.slice(0, ref.name.length - '^{}'.length);
       var name = 'remote-tag: ' + ref.remote + '/' + tagRef.split('/')[2];
-      var refViewModel = self.getRef(name);
-      var node = self.getNode(ref.sha1);
-      refViewModel.node(node);
-
-      nodeIdsToRemoteTags[ref.sha1] = nodeIdsToRemoteTags[ref.sha1] || [];
-      nodeIdsToRemoteTags[ref.sha1].push(refViewModel);
+      self.getRef(name).node(self.getNode(ref.sha1));
     }
   });
-
-  for(var key in this.nodesById) {
-    this.nodesById[key].remoteTags(nodeIdsToRemoteTags[key] || []);
-  }
 }
 GraphViewModel.prototype.checkHeadMove = function(toNode) {
   if (this.HEAD() === toNode) {
