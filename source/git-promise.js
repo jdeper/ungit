@@ -143,11 +143,13 @@ git.status = function(repoPath, file) {
           isRebaseMerge: fs.isExists(path.join(repoPath, '.git', 'rebase-merge')),
           isRebaseApply: fs.isExists(path.join(repoPath, '.git', 'rebase-apply')),
           isMerge: fs.isExists(path.join(repoPath, '.git', 'MERGE_HEAD')),
+          inCherry: fs.isExists(path.join(repoPath, '.git', 'CHERRY_PICK_HEAD'))
         }).then(function(result) {
           status.inRebase = result.isRebaseMerge || result.isRebaseApply;
           status.inMerge = result.isMerge;
+          status.inCherry = result.inCherry;
         }).then(function() {
-          if (status.inMerge) {
+          if (status.inMerge || status.inCherry) {
             return fs.readFileAsync(path.join(repoPath, '.git', 'MERGE_MSG'), { encoding: 'utf8' })
               .then(function(commitMessage) {
                 status.commitMessage = commitMessage;
@@ -159,17 +161,19 @@ git.status = function(repoPath, file) {
       })
   }).then(function(result) {
     var numstats = [result.numStatsStaged, result.numStatsUnstaged].reduce(_.extend, {});
+    var status = result.status;
 
     // merge numstats
-    Object.keys(result.status.files).forEach(function(filename) {
+    Object.keys(status.files).forEach(function(filename) {
       // git diff returns paths relative to git repo but git status does not
       var absoluteFilename = filename.replace(/\.\.\//g, '');
       var stats = numstats[absoluteFilename] || { additions: '-', deletions: '-' };
-      result.status.files[filename].additions = stats.additions;
-      result.status.files[filename].deletions = stats.deletions;
+      var fileObj = status.files[filename];
+      fileObj.additions = stats.additions;
+      fileObj.deletions = stats.deletions;
     });
 
-    return result.status;
+    return status;
   });
 }
 
