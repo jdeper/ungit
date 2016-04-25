@@ -10,14 +10,6 @@ var electronPackager = require('electron-packager');
 
 module.exports = function(grunt) {
   var packageJson = grunt.file.readJSON('package.json');
-  var babelPresets;
-
-  if (grunt.cli.tasks.indexOf('package') > -1 || grunt.cli.tasks.indexOf('babel:electron') > -1) {
-    babelPresets = ['es2015', 'stage-0'];
-  } else {
-    babelPresets = ['features'];
-  }
-  grunt.log.debug('Babel presets: ', babelPresets);
 
   grunt.initConfig({
     pkg: packageJson,
@@ -249,7 +241,7 @@ module.exports = function(grunt) {
     babel: {
       prod: {
         options: {
-          presets: babelPresets
+          presets: ['es2015', 'stage-0']
         },
         files: [{
             expand: true,
@@ -261,7 +253,7 @@ module.exports = function(grunt) {
       },
       electron: {
         options: {
-          presets: babelPresets
+          presets: ['es2015', 'stage-0']
         },
         files: [{
             expand: true,
@@ -432,7 +424,7 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-babel');
 
   // Default task, builds everything needed
-  grunt.registerTask('default', ['clean:babel', 'less:production', 'jshint', 'babel:prod', 'browserify-common', 'browserify-components', 'lineending:production', 'imageEmbed:default', 'copy:main', 'imagemin:default']);
+  grunt.registerTask('default', ['clean:babel', 'less:production', 'jshint', 'babel:prod', 'browserify-common', 'browserify-components', 'lineending:production', 'imageEmbed:default', 'copy:main']);
 
   // Run tests without compile (use watcher or manually build)
   grunt.registerTask('unittest', ['mochaTest']);

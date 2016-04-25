@@ -8,7 +8,75 @@ var _ = require('lodash');
 var isWindows = /^win/.test(process.platform);
 var Bluebird = require('bluebird');
 var fs = require('./utils/fs-async');
+var async = require('async');
 var gitConfigArguments = ['-c', 'color.ui=false', '-c', 'core.quotepath=false', '-c', 'core.pager=cat'];
+
+var gitQueue = async.queue(function (args, callback) {
+  if (config.logGitCommands) winston.info('git executing: ' + args.repoPath + ' ' + args.commands.join(' '));
+  var rejected = false;
+  var stdout = '';
+  var stderr = '';
+  var gitProcess = child_process.spawn(
+    'git',
+    args.commands,
+    {
+      cwd: args.repoPath,
+      maxBuffer: 1024 * 1024 * 100,
+      timeout: args.timeout
+    });
+
+  if (args.outPipe) {
+    gitProcess.stdout.pipe(args.outPipe);
+  } else {
+    gitProcess.stdout.on('data', function(data) {
+      stdout += data.toString();
+    });
+  }
+  if (args.inPipe) {
+    gitProcess.stdin.end(args.inPipe);
+  }
+  gitProcess.stderr.on('data', function(data) {
+    stderr += data.toString();
+  });
+  gitProcess.on('error', function (error) {
+    if (args.outPipe) args.outPipe.end();
+    rejected = true;
+    callback(error);
+  });
+
+  gitProcess.on('close', function (code) {
+    if (config.logGitCommands) winston.info('git result (first 400 bytes): ' + args.commands.join(' ') + '\n' + stderr.slice(0, 400) + '\n' + stdout.slice(0, 400));
+    if (rejected) return;
+    if (args.outPipe) args.outPipe.end();
+
+    if (code === 0 || (code === 1 && args.allowError)) {
+      callback(null, stdout);
+    } else {
+      callback(getGitError(args, stderr, stdout));
+    }
+  });
+}, config.maxConcurrentGitOperations);
+
+var gitExecutorProm = function(args, retryCount) {
+  return new Bluebird(function (resolve, reject) {
+    gitQueue.push(args, function(queueError, out) {
+      if(queueError) {
+        reject(queueError);
+      } else {
+        resolve(out);
+      }
+    });
+  }).catch(function(err) {
+    if (retryCount > 0 && err.error && err.error.indexOf("index.lock': File exists") > -1) {
+      return new Bluebird(function(resolve) {
+        // sleep random amount between 250 ~ 750 ms
+        setTimeout(resolve, Math.floor(Math.random() * (500) + 250));
+      }).then(gitExecutorProm.bind(null, args, retryCount - 1));
+    } else {
+      throw err;
+    }
+  });
+}
 
 /**
  * Returns a promise that executes git command with given arguments
@@ -30,6 +98,7 @@ var git = function(commands, repoPath, allowError, outPipe, inPipe, timeout) {
     args.repoPath = repoPath;
     args.outPipe = outPipe;
     args.inPipe = inPipe;
+    args.allowError = allowError;
   } else {
     args = commands;
   }
@@ -40,51 +109,7 @@ var git = function(commands, repoPath, allowError, outPipe, inPipe, timeout) {
   args.timeout = args.timeout || 2 * 60 * 1000; // Default timeout tasks after 2 min
   args.startTime = Date.now();
 
-  return new Bluebird(function (resolve, reject) {
-    if (config.logGitCommands) winston.info('git executing: ' + args.repoPath + ' ' + args.commands.join(' '));
-    var rejected = false;
-    var stdout = '';
-    var stderr = '';
-    var gitProcess = child_process.spawn(
-      'git',
-      args.commands,
-      {
-        cwd: args.repoPath,
-        maxBuffer: 1024 * 1024 * 100,
-        timeout: args.timeout
-      });
-
-    if (args.outPipe) {
-      gitProcess.stdout.pipe(args.outPipe);
-    } else {
-      gitProcess.stdout.on('data', function(data) {
-        stdout += data.toString();
-      });
-    }
-    if (args.inPipe) {
-      gitProcess.stdin.end(args.inPipe);
-    }
-    gitProcess.stderr.on('data', function(data) {
-      stderr += data.toString();
-    });
-    gitProcess.on('error', function (error) {
-      if (args.outPipe) args.outPipe.end();
-      rejected = true;
-      reject(error);
-    });
-
-    gitProcess.on('close', function (code) {
-      if (config.logGitCommands) winston.info('git result (first 400 bytes): ' + args.commands.join(' ') + '\n' + stderr.slice(0, 400) + '\n' + stdout.slice(0, 400));
-      if (rejected) return;
-      if (args.outPipe) args.outPipe.end();
-
-      if (code === 0 || (code === 1 && allowError)) {
-        resolve(stdout);
-      } else {
-        reject(getGitError(args, stderr, stdout));
-      }
-    });
-  });
+  return gitExecutorProm(args, config.lockConflictRetryCount);
 }
 
 var getGitError = function(args, stderr, stdout) {
@@ -339,8 +364,6 @@ git.commit = function(repoPath, amend, message, files) {
   }).then(function(status) {
     var toAdd = [];
     var toRemove = [];
-    var addPromise;     // a promise that add all files in toAdd
-    var removePromise;  // a proimse that removes all files in toRemove
     var diffPatchPromises = []; // promiese that patches each files individually
 
     for (var v in files) {
@@ -361,14 +384,14 @@ git.commit = function(repoPath, amend, message, files) {
       }
     }
 
-    if (toAdd.length > 0) {
-      addPromise = git(['update-index', '--add', '--stdin'], repoPath, null, null, toAdd.join('\n'));
-    }
-    if (toRemove.length > 0) {
-      removePromise = git(['update-index', '--remove', '--stdin'], repoPath, null, null, toRemove.join('\n'));
-    }
+    var commitPromiseChain = Bluebird.resolve()
+      .then(function() {
+        if (toRemove.length > 0) return git(['update-index', '--remove', '--stdin'], repoPath, null, null, toRemove.join('\n'));
+      }).then(function() {
+        if (toAdd.length > 0) return git(['update-index', '--add', '--stdin'], repoPath, null, null, toAdd.join('\n'));
+      });
 
-    return Bluebird.join(addPromise, removePromise, Bluebird.all(diffPatchPromises));
+    return Bluebird.join(commitPromiseChain, Bluebird.all(diffPatchPromises));
   }).then(function() {
     return git(['commit', (amend ? '--amend' : ''), '--file=-'], repoPath, null, null, message);
   }).catch(function(err) {
