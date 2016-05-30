@@ -21,7 +21,7 @@ GraphActions.ActionBase = function(graph) {
   this.graph = graph;
   this.server = graph.server;
   this.performProgressBar = components.create('progressBar', {
-    predictionMemoryKey: 'action-' + this.style + '-' + graph.repoPath,
+    predictionMemoryKey: 'action-' + this.style + '-' + graph.repoPath(),
     fallbackPredictedTimeMs: 1000,
     temporary: true
   });
@@ -106,11 +106,11 @@ GraphActions.Reset.prototype.createHoverGraphic = function() {
 GraphActions.Reset.prototype.perform = function(callback) {
   var self = this;
   var context = this.graph.currentActionContext();
-  var diag = components.create('yesnodialog', { title: 'Are you sure?', details: 'This operation cannot be undone with ungit.'});
+  var remoteRef = context.getRemoteRef(self.graph.currentRemote());
+  var diag = components.create('yesnodialog', { title: 'Are you sure?', details: 'Resetting to ref: ' + remoteRef.name + ' cannot be undone with ungit.'});
   diag.closed.add(function() {
     if (diag.result()) {
-      var remoteRef = context.getRemoteRef(self.graph.currentRemote());
-      self.server.post('/reset', { path: self.graph.repoPath, to: remoteRef.name, mode: 'hard' }, function() {
+      self.server.post('/reset', { path: self.graph.repoPath(), to: remoteRef.name, mode: 'hard' }, function() {
         context.node(remoteRef.node());
         callback();
       });
@@ -145,7 +145,7 @@ GraphActions.Rebase.prototype.createHoverGraphic = function() {
   return new RebaseViewModel(this.node, path);
 }
 GraphActions.Rebase.prototype.perform = function(callback) {
-  this.server.post('/rebase', { path: this.graph.repoPath, onto: this.node.sha1 }, function(err) {
+  this.server.post('/rebase', { path: this.graph.repoPath(), onto: this.node.sha1 }, function(err) {
     callback();
     if (err && err.errorCode == 'merge-failed') return true;
   });
@@ -174,7 +174,7 @@ GraphActions.Merge.prototype.createHoverGraphic = function() {
   return new MergeViewModel(this.graph, this.node, node);
 }
 GraphActions.Merge.prototype.perform = function(callback) {
-  this.server.post('/merge', { path: this.graph.repoPath, with: this.graph.currentActionContext().localRefName }, function(err) {
+  this.server.post('/merge', { path: this.graph.repoPath(), with: this.graph.currentActionContext().localRefName }, function(err) {
     callback();
     if (err && err.errorCode == 'merge-failed') return true;
   });
@@ -238,14 +238,14 @@ GraphActions.Checkout.prototype.perform = function(callback) {
   var self = this;
   var context = this.graph.currentActionContext();
   var refName = context instanceof RefViewModel ? context.refName : context.sha1;
-  this.server.post('/checkout', { path: this.graph.repoPath, name: refName }, function(err) {
+  this.server.post('/checkout', { path: this.graph.repoPath(), name: refName }, function(err) {
     if (err && err.errorCode != 'merge-failed') {
       callback();
       return;
     }
 
     if (context instanceof RefViewModel && context.isRemoteBranch) {
-      self.server.post('/reset', { path: self.graph.repoPath, to: context.name, mode: 'hard' }, function(err, res) {
+      self.server.post('/reset', { path: self.graph.repoPath(), to: context.name, mode: 'hard' }, function(err, res) {
         self.graph.HEADref().node(context instanceof RefViewModel ? context.node() : context);
         callback();
         return err && err.errorCode != 'merge-failed' ? undefined : true;
@@ -275,7 +275,8 @@ GraphActions.Delete.prototype.style = 'delete';
 GraphActions.Delete.prototype.icon = 'glyphicon glyphicon-remove';
 GraphActions.Delete.prototype.perform = function(callback) {
   var context = this.graph.currentActionContext();
-  var diag = components.create('yesnodialog', { title: 'Are you sure?', details: 'This operation cannot be undone with ungit.'});
+  var name = context.isRemoteBranch ? "remote " + context.localRefName : context.localRefName;
+  var diag = components.create('yesnodialog', { title: 'Are you sure?', details: 'Deleting ' + name + ' branch or tag cannot be undone with ungit.'});
   diag.closed.add(function() {
     if (diag.result()) {
       context.remove(callback);
@@ -300,7 +301,8 @@ GraphActions.CherryPick.prototype.text = 'Cherry pick';
 GraphActions.CherryPick.prototype.style = 'cherry-pick';
 GraphActions.CherryPick.prototype.icon = 'octicon octicon-circuit-board';
 GraphActions.CherryPick.prototype.perform = function(callback) {
-  this.server.post('/cherrypick', { path: this.graph.repoPath, name: this.node.sha1 }, function(err) {
+  var self = this;
+  this.server.post('/cherrypick', { path: this.graph.repoPath(), name: this.node.sha1 }, function(err) {
     callback();
     if (err && err.errorCode == 'merge-failed') return true;
   });
@@ -322,7 +324,7 @@ GraphActions.Uncommit.prototype.style = 'uncommit';
 GraphActions.Uncommit.prototype.icon = 'octicon octicon-zap';
 GraphActions.Uncommit.prototype.perform = function(callback) {
   var self = this;
-  this.server.postPromise('/reset', { path: this.graph.repoPath, to: 'HEAD^', mode: 'mixed' })
+  this.server.postPromise('/reset', { path: this.graph.repoPath(), to: 'HEAD^', mode: 'mixed' })
     .then(function() {
       var targetNode = self.node.belowNode;
       while (targetNode && !targetNode.ancestorOfHEAD()) {
@@ -347,6 +349,7 @@ GraphActions.Revert.prototype.text = 'Revert';
 GraphActions.Revert.prototype.style = 'revert';
 GraphActions.Revert.prototype.icon = 'octicon octicon-history';
 GraphActions.Revert.prototype.perform = function(callback) {
-  this.server.postPromise('/revert', { path: this.graph.repoPath, commit: this.node.sha1 })
+  var self = this;
+  this.server.postPromise('/revert', { path: this.graph.repoPath(), commit: this.node.sha1 })
     .finally(callback);
 }

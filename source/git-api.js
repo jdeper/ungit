@@ -270,7 +270,7 @@ exports.registerApi = function(env) {
   });
 
   app.post(exports.pathPrefix + '/branches', ensureAuthenticated, ensurePathExists, function(req, res){
-    var commands = ['branch', (req.body.force ? '-f' : ''), req.body.name.trim(), (req.body.startPoint || 'HEAD').trim()];
+    var commands = ['branch', (req.body.force ? '-f' : ''), req.body.name.trim(), (req.body.sha1 || 'HEAD').trim()];
 
     jsonResultOrFailProm(res, gitPromise(commands, req.body.path))
       .finally(emitGitDirectoryChanged.bind(null, req.body.path));
@@ -283,8 +283,14 @@ exports.registerApi = function(env) {
 
   app.delete(exports.pathPrefix + '/remote/branches', ensureAuthenticated, ensurePathExists, ensureValidSocketId, function(req, res){
     var commands = credentialsOption(req.query.socketId).concat(['push', req.query.remote, ':' + req.query.name.trim()]);
+    var task = gitPromise(commands, req.query.path)
+      .catch(err => {
+        if (!(err.stderr && err.stderr.indexOf("remote ref does not exist") > -1)) {
+          throw err;
+        }
+      });
 
-    jsonResultOrFailProm(res, gitPromise(commands, req.query.path))
+    jsonResultOrFailProm(res, task)
       .finally(emitGitDirectoryChanged.bind(null, req.query.path))
   });
 
@@ -305,7 +311,7 @@ exports.registerApi = function(env) {
   });
 
   app.post(exports.pathPrefix + '/tags', ensureAuthenticated, ensurePathExists, function(req, res){
-    var commands = ['tag', (req.body.force ? '-f' : ''), '-a', req.body.name.trim(), '-m', req.body.name.trim(), (req.body.startPoint || 'HEAD').trim()];
+    var commands = ['tag', (req.body.force ? '-f' : ''), '-a', req.body.name.trim(), '-m', req.body.name.trim(), (req.body.sha1 || 'HEAD').trim()];
 
     jsonResultOrFailProm(res, gitPromise(commands, req.body.path))
       .finally(emitGitDirectoryChanged.bind(null, req.body.path));
@@ -324,7 +330,14 @@ exports.registerApi = function(env) {
   });
 
   app.post(exports.pathPrefix + '/checkout', ensureAuthenticated, ensurePathExists, function(req, res) {
-    jsonResultOrFailProm(res, autoStashExecuteAndPop(['checkout', req.body.name.trim()], req.body.path))
+    var arg = null;
+    if (!!req.body.sha1) {
+      arg = ['checkout', '-b', req.body.name.trim(), req.body.sha1];
+    } else {
+      arg = ['checkout', req.body.name.trim()];
+    }
+
+    jsonResultOrFailProm(res, autoStashExecuteAndPop(arg, req.body.path))
       .then(emitGitDirectoryChanged.bind(null, req.body.path))
       .then(emitWorkingTreeChanged.bind(null, req.body.path));
   });
@@ -454,22 +467,8 @@ exports.registerApi = function(env) {
     jsonResultOrFailProm(res, task);
   });
 
-  app.get(exports.pathPrefix + '/quickstatus', ensureAuthenticated, function(req, res){
-    var task = fs.isExists(req.query.path).then(function(exists) {
-      if (exists) {
-        return gitPromise.revParse(req.query.path, '--is-inside-work-tree')
-          .then(function(isWorkingDir) {
-            if (isWorkingDir) {
-              return 'inited';
-            } else {
-              return gitPromise.revParse(req.query.path, '--is-bare-repository')
-                .then(function(isBareDir) { return isBareDir ? 'bare' : 'uninited'; });
-            }
-          });
-      } else {
-        return 'no-such-path';
-      }
-    });
+  app.get(exports.pathPrefix + '/quickstatus', ensureAuthenticated, function(req, res) {
+    const task = fs.isExists(req.query.path).then((exists) => exists ? gitPromise.revParse(req.query.path) : { type: 'no-such-path', gitRootPath: req.query.path } )
     jsonResultOrFailProm(res, task);
   });
 

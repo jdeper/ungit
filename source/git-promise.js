@@ -179,6 +179,11 @@ git.status = function(repoPath, file) {
               .then(function(commitMessage) {
                 status.commitMessage = commitMessage;
                 return status;
+              }).catch(err => {
+                // 'MERGE_MSG' file is gone away, which means we are no longer in merge state
+                // and state changed while this call is being made.
+                status.inMerge = status.inCherry = false;
+                return status;
               });
           }
           return status;
@@ -261,12 +266,9 @@ git.binaryFileContent = function(repoPath, filename, version, outPipe) {
 
 git.diffFile = function(repoPath, filename, sha1) {
   var newFileDiffArgs = ['diff', '--no-index', isWindows ? 'NUL' : '/dev/null', filename.trim()];
-  return git.revParse(repoPath, '--is-bare-repository')
-    .then(function(isBareDir) {
-      if (isBareDir) { // do not call git.status for bare repositories
-        return { files: {} };
-      }
-      return git.status(repoPath);
+  return git.revParse(repoPath)
+    .then(function(revParse) {
+      return revParse.type === 'bare' ? { files: {} } : git.status(repoPath); // if bare do not call status
     }).then(function(status) {
       var file = status.files[filename];
 
@@ -297,21 +299,18 @@ git.diffFile = function(repoPath, filename, sha1) {
 }
 
 git.getCurrentBranch = function(repoPath) {
-  var HEADFile;
-  return git(['rev-parse', '--show-toplevel'], repoPath)
-    .then(function(rootRepoPath) {
-      HEADFile = path.join(rootRepoPath.trim(), '.git', 'HEAD');
-    }).then(function() {
-      return fs.isExists(HEADFile).then(function(isExist) {
-        if (!isExist) throw { errorCode: 'not-a-repository', error: 'No such file: ' + HEADFile };
-      });
-    }).then(function() {
+  return git.revParse(repoPath).then(revResult => {
+    const HEADFile = path.join(revResult.gitRootPath, '.git', 'HEAD');
+    return fs.isExists(HEADFile).then(isExist => {
+      if (!isExist) throw { errorCode: 'not-a-repository', error: 'No such file: ' + HEADFile };
+    }).then(() => {
       return fs.readFileAsync(HEADFile, { encoding: 'utf8' });
-    }).then(function(text) {
+    }).then(text => {
       var rows = text.toString().split('\n');
       var branch = rows[0].slice('ref: refs/heads/'.length);
       return branch;
     });
+  });
 }
 
 git.discardAllChanges = function(repoPath) {
@@ -401,13 +400,18 @@ git.commit = function(repoPath, amend, message, files) {
   });
 }
 
-git.revParse = function(repoPath, type) {
-  return git(['rev-parse', type], repoPath)
-    .catch(function(err) {
-      return false;
-    }).then(function(result) {
-      return result.toString().indexOf('true') > -1;
-    });
+git.revParse = function(repoPath) {
+  return git(['rev-parse', '--is-inside-work-tree', '--is-bare-repository', '--show-toplevel'], repoPath)
+    .then((result) => {
+      const resultLines = result.toString().split('\n');
+      const rootPath = path.normalize(resultLines[2] ? resultLines[2] : repoPath);
+      if (resultLines[0].indexOf('true') > -1) {
+        return { type: 'inited', gitRootPath: rootPath };
+      } else if (resultLines[1].indexOf('true') > -1) {
+        return { type: 'bare', gitRootPath: rootPath };
+      }
+      return { type: 'uninited', gitRootPath: rootPath };
+    }).catch((err) => ({ type: 'uninited', gitRootPath: path.normalize(repoPath) }));
 }
 
 module.exports = git;
