@@ -38,3 +38,4 @@ report/
 coverage
 
 /src
+.DS_Store
