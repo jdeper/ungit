@@ -3,7 +3,20 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/) and
 [Keep a changlelog's changelog standard](http://keepachangelog.com/)
 
-## [Unreleased](https://github.com/FredrikNoren/ungit/compare/v0.10.1...master)
+## [Unreleased](https://github.com/FredrikNoren/ungit/compare/v0.10.3...master)
+
+## [0.10.3](https://github.com/FredrikNoren/ungit/compare/v0.10.2...v0.10.3)
+
+### Added
+- Show diffs for stashed changes [#444](https://github.com/FredrikNoren/ungit/issues/444)
+
+### Fixed
+- Missing npm as a normal dependency [#766] (https://github.com/FredrikNoren/ungit/issues/766)
+
+## [0.10.2](https://github.com/FredrikNoren/ungit/compare/v0.10.1...v0.10.2)
+
+# Fixed
+- Handle SIGTERM and SIGINT [#763](https://github.com/FredrikNoren/ungit/issues/763)
 
 ### Added
 - Added bare repo support [#177](https://github.com/FredrikNoren/ungit/issues/177) [#728](https://github.com/FredrikNoren/ungit/issues/728)
@@ -27,6 +40,7 @@ This project adheres to [Semantic Versioning](http://semver.org/) and
 - Dropped support for Node 0.10 and 0.12 [#745](https://github.com/FredrikNoren/ungit/pull/745/files)
 
 ## [0.10.1](https://github.com/FredrikNoren/ungit/compare/v0.10.0...v0.10.1)
+
 ### Added
 - Introduced change log! [#687](https://github.com/FredrikNoren/ungit/issues/687)
 - Improved server and client error logging [#695](https://github.com/FredrikNoren/ungit/pull/695)
