@@ -400,15 +400,17 @@ git.revParse = (repoPath) => {
     }).catch((err) => ({ type: 'uninited', gitRootPath: path.normalize(repoPath) }));
 }
 
-git.log = (path, limit) => {
-  return git(['log', '--decorate=full', '--date=default', '--pretty=fuller', '--branches', '--tags', '--remotes', '--parents', '--no-notes', '--numstat', '--date-order', limit ? `--max-count=${limit}` : ''], path)
+git.log = (path, limit, skip) => {
+  return git(['log', '--decorate=full', '--date=default', '--pretty=fuller', '--branches', '--tags', '--remotes', '--parents', '--no-notes', '--numstat', '--date-order', `--max-count=${limit}`, `--skip=${skip}`], path)
+    .then(gitParser.parseGitLog)
     .then((log) => {
+      log = log ? log : [];
       if (config.alwaysLoadActiveBranch && !log.isHeadExist) {
-        return git.logWithHead(path, log.length + 25);
+        return git.log(path, config.numberOfNodesPerLoad + limit, config.numberOfNodesPerLoad + skip);
       } else {
-        return log;
+        return { "limit": limit, "skip": skip, "nodes": log};
       }
-    }).then(gitParser.parseGitLog)
+    })
 }
 
 module.exports = git;
