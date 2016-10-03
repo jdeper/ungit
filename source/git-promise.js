@@ -53,6 +53,23 @@ const gitQueue = async.queue((args, callback) => {
   });
 }, config.maxConcurrentGitOperations);
 
+const isRetryableError = function(err) {
+  if (!err) {
+    return false;
+  } else if (!err.error) {
+    return false;
+  } else if (err.error.indexOf("index.lock': File exists") > -1) {
+    // Dued to git operation parallelization it is possible that race condition may happen
+    return true;
+  } else if (err.error.indexOf("index file open failed: Permission denied") > -1) {
+    // TODO: Issue #796, based on the conversation with Appveyor team, I guess Windows system
+    // can report "Permission denied" for the file locking issue.
+    return true;
+  } else {
+    return false;
+  }
+}
+
 const gitExecutorProm = (args, retryCount) => {
   return new Bluebird((resolve, reject) => {
     gitQueue.push(args, (queueError, out) => {
@@ -63,7 +80,7 @@ const gitExecutorProm = (args, retryCount) => {
       }
     });
   }).catch((err) => {
-    if (retryCount > 0 && err.error && err.error.indexOf("index.lock': File exists") > -1) {
+    if (retryCount > 0 && isRetryableError(err)) {
       return new Bluebird((resolve) => {
         // sleep random amount between 250 ~ 750 ms
         setTimeout(resolve, Math.floor(Math.random() * (500) + 250));
@@ -253,7 +270,7 @@ git.binaryFileContent = (repoPath, filename, version, outPipe) => {
   return git(['show', `${version}:${filename}`], repoPath, null, outPipe);
 }
 
-git.diffFile = (repoPath, filename, sha1) => {
+git.diffFile = (repoPath, filename, sha1, ignoreWhiteSpace) => {
   const newFileDiffArgs = ['diff', '--no-index', isWindows ? 'NUL' : '/dev/null', filename.trim()];
   return git.revParse(repoPath)
     .then((revParse) => { return revParse.type === 'bare' ? { files: {} } : git.status(repoPath) }) // if bare do not call status
@@ -272,9 +289,9 @@ git.diffFile = (repoPath, filename, sha1) => {
         if (file && file.isNew) {
           exec = git(newFileDiffArgs, repoPath, true);
         } else if (sha1) {
-          exec = git(['diff', `${sha1}^`, sha1, "--", filename.trim()], repoPath);
+          exec = git(['diff', ignoreWhiteSpace ? '-w' : '', `${sha1}^`, sha1, "--", filename.trim()], repoPath);
         } else {
-          exec = git(['diff', 'HEAD', '--', filename.trim()], repoPath);
+          exec = git(['diff', ignoreWhiteSpace ? '-w' : '', 'HEAD', '--', filename.trim()], repoPath);
         }
         return exec.catch((err) => {
           // when <rev> is very first commit and 'diff <rev>~1:[file] <rev>:[file]' is performed,
