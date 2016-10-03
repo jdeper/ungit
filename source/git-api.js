@@ -82,18 +82,18 @@ exports.registerApi = (env) => {
     }
   }
 
-  const emitWorkingTreeChanged = (repoPath) => {
+  const emitWorkingTreeChanged = _.debounce((repoPath) => {
     if (io) {
       io.sockets.in(path.normalize(repoPath)).emit('working-tree-changed', { repository: repoPath });
       winston.info('emitting working-tree-changed to sockets, manually triggered');
     }
-  }
-  const emitGitDirectoryChanged = (repoPath) => {
+  }, 250, { 'maxWait': 1000 })
+  const emitGitDirectoryChanged = _.debounce((repoPath) => {
     if (io) {
       io.sockets.in(path.normalize(repoPath)).emit('git-directory-changed', { repository: repoPath });
       winston.info('emitting git-directory-changed to sockets, manually triggered');
     }
-  }
+  }, 250, { 'maxWait': 1000 })
 
   const autoStashExecuteAndPop = (commands, repoPath, allowedCodes, outPipe, inPipe, timeout) => {
     if (config.autoStashAndPop) {
@@ -197,7 +197,8 @@ exports.registerApi = (env) => {
   });
 
   app.get(`${exports.pathPrefix}/diff`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    jsonResultOrFailProm(res, gitPromise.diffFile(req.query.path, req.query.file, req.query.sha1));
+    var isIgnoreWhiteSpace = req.query.whiteSpace === "true" ? true : false;
+    jsonResultOrFailProm(res, gitPromise.diffFile(req.query.path, req.query.file, req.query.sha1, isIgnoreWhiteSpace));
   });
 
   app.get(`${exports.pathPrefix}/diff/image`, ensureAuthenticated, ensurePathExists, (req, res) => {
@@ -424,8 +425,17 @@ exports.registerApi = (env) => {
   });
 
   app.post(`${exports.pathPrefix}/resolveconflicts`, ensureAuthenticated, ensurePathExists, (req, res) => {
+    console.log('resolve conflicts');
     jsonResultOrFailProm(res, gitPromise.resolveConflicts(req.body.path, req.body.files))
       .then(emitWorkingTreeChanged.bind(null, req.body.path));
+  });
+
+  app.post(`${exports.pathPrefix}/launchmergetool`, ensureAuthenticated, ensurePathExists, (req, res) => {
+    const commands = ['mergetool', ...(typeof req.body.tool === 'string'? ['--tool ', req.body.tool]: []), '--no-prompt', req.body.file];
+    gitPromise(commands, req.body.path);
+    // Send immediate response, this is because merging may take a long time
+    // and there is no need to wait for it to finish.
+    res.json({});
   });
 
   app.get(`${exports.pathPrefix}/baserepopath`, ensureAuthenticated, ensurePathExists, (req, res) => {
