@@ -259,7 +259,7 @@ git.stashExecuteAndPop = (commands, repoPath, allowError, outPipe, inPipe, timeo
         throw err;
       }
     }).then((result) => {
-      if (result.indexOf('No local changes to save') != -1) {
+      if (!result || result.indexOf('No local changes to save') != -1) {
         hadLocalChanges = false;
       }
       return git(commands, repoPath, allowError, outPipe, inPipe, timeout);
@@ -377,7 +377,7 @@ git.commit = (repoPath, amend, message, files) => {
       if (fileStatus.removed) {
         toRemove.push(file.name.trim());
       } else if (files[v].patchLineList) {
-        diffPatchPromises.push(git(['diff', file.name.trim()], repoPath)
+        diffPatchPromises.push(git(['diff', '--', file.name.trim()], repoPath)
           .then(gitParser.parsePatchDiffResult.bind(null, file.patchLineList))
           .then(git.applyPatchedDiff.bind(null, repoPath)));
       } else {
