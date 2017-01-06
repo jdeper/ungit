@@ -1,9 +1,11 @@
 # Change Log
 All notable changes to this project will be documented in this file.
-This project adheres to [Semantic Versioning](http://semver.org/) and
-[Keep a changlelog's changelog standard](http://keepachangelog.com/)
+This project adheres to [Semantic Versioning](http://semver.org/).
+Use the following format for additions: ` - VERSION: [feature/patch (if applicable)] Short description of change. Links to relevant issues/PRs.`
 
-## [Unreleased](https://github.com/FredrikNoren/ungit/compare/v0.10.3...master)
+- 1.0.0: Introduced Continuous delivery. [#823](https://github.com/FredrikNoren/ungit/issues/823)
+
+## [1.0.0](https://github.com/FredrikNoren/ungit/compare/v0.10.3...v1.0.0)
 
 ### Added
 - Added search by git folder name in the search bar. [#793](https://github.com/FredrikNoren/ungit/issues/793)
@@ -18,10 +20,12 @@ This project adheres to [Semantic Versioning](http://semver.org/) and
 - File diff firing increasing number of events longer it survives.
 - Fix missing ungit logo. [#812](https://github.com/FredrikNoren/ungit/issues/812)
 - Fix when stash output is empty [#818](https://github.com/FredrikNoren/ungit/issues/818)
+- Fix minor display error for wide git repo [#830](https://github.com/FredrikNoren/ungit/pull/830)
 - Persist commit messages during merge operation [#779](https://github.com/FredrikNoren/ungit/issues/779)
 - Refresh `staging.files` object for cleaner refresh such as refresh pached line list, diff and etc.
 - Fixed an issue where patching on some key word file names such as "test".
 - Fix missing commit message body if commit was committed with Visual Studio or Visual Studio Code [#826](https://github.com/FredrikNoren/ungit/pull/826)
+- Fix initial page load when loaded node does not fits in screen. [#832](https://github.com/FredrikNoren/ungit/issues/832)
 
 ## [0.10.3](https://github.com/FredrikNoren/ungit/compare/v0.10.2...v0.10.3)
 

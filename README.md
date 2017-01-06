@@ -44,7 +44,7 @@ This will launch the server and open up a browser with the ui.
 
 Configuring
 ---------
-Put a configuration file called .ungitrc in your home directory (`/home/USERNAME` on *nix, `C:/Users/USERNAME/` on windows). Can be in either json or ini format. See [source/config.js](source/config.js) for available options.
+Put a configuration file called .ungitrc in your home directory (`/home/USERNAME` on \*nix, `C:/Users/USERNAME/` on windows). Can be in either json or ini format. See [source/config.js](source/config.js) for available options.
 
 You can also override configuration variables at launch by specifying them as command line arguments; `ungit --port=8080`. To disable boolean features use --no: `ungit --no-autoFetch`.
 
@@ -71,6 +71,12 @@ Plugins are installed by simply placing them in the Ungit plugin directory (`~/.
 
 There's a guide in the [PLUGINS.md](PLUGINS.md) file on how to write new plugins.
 
+Auto Refresh
+------------
+Ungit will watch git directory recursively upon page view and automatically refresh contents on git operations or changes on files that are not configured to be ignored in `.gitignore`.  
+
+One caveat is that node's [`fs.watch()`](https://nodejs.org/docs/latest/api/fs.html#fs_fs_watch_filename_options_listener) with `recursive: true` option is only available in Mac and Windows.  For non Mac and Windows machines, git operations will be automatically refreshed but file changes may require manual refreshes as `fs.watch()` is unable to detect changes within nested directory hierarchy.
+
 Text Editor Integration
 -------------------
 
@@ -81,6 +87,10 @@ Text Editor Integration
 * [brackets-ungit](https://github.com/Hirse/brackets-ungit) for [Brackets.io](http://brackets.io/) by [@hirse](https://github.com/Hirse)
 
 ![atom-brackets Screenshot](https://raw.githubusercontent.com/Hirse/brackets-ungit/master/screenshots/viewer.png)
+
+* [Codiad-OpenUngit](https://github.com/viharm/Codiad-OpenUngit) for [Codiad](http://codiad.com/) by [@viharm](https://github.com/viharm)
+
+![Codiad-OpenUngit screenshot](https://cloud.githubusercontent.com/assets/2663937/21566609/6d107410-ce9c-11e6-91e1-2d8a1607b718.png)
 
 
 Developing
